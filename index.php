@@ -4,7 +4,7 @@
         <meta charset="utf-8">
         <title>GlslCanvas</title>
 
-        <script type="text/javascript" src="src/GlslCanvas.min.js"></script>
+        <script type="text/javascript" src="http://thebookofshaders.com/glslCanvas/GlslCanvas.js"></script>
         <script type="text/javascript" src="src/fetch.js"></script>
 
         <!— Open Graph data —>
