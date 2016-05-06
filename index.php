@@ -7,6 +7,17 @@
         <script type="text/javascript" src="src/GlslCanvas.min.js"></script>
         <script type="text/javascript" src="src/fetch.js"></script>
 
+        <!— Open Graph data —>
+        <meta property="og:title" content="GLSL Shader" />
+        <meta property="og:type" content="article" />
+        <meta property="og:description" content="The Book of Shader player" />
+
+        <?php
+            if (!empty($_GET['log']))
+            echo '<meta property="og:url" content="http://player.thebookofshaders.com/?log='. $_GET['log'].'"/>';
+            echo '<meta property="og:image" content="http://thebookofshaders.com/log/'.$_GET['log'].'.png"/>';
+        ?>
+
         <style>
             body {
                 background: #101515;
@@ -191,53 +202,12 @@ void main(){
                     sandbox_content = content;
                     sandbox.load(content);
 
-                    var title = addTitle();
-                    var author = addAuthor();
                     if ( title === "unknown" && author === "unknown") {
                         document.getElementById("credits").style.visibility = "hidden";
                     } else {
                         document.getElementById("credits").style.visibility = "visible";
                     }
-
-                    addMeta({
-                                'title' : title + ' by ' + author,
-                                'type' : 'website',
-                                'url': window.location.href,
-                                'image': sandbox_thumbnail
-                            })                 
-                })
-        }
-
-        function addTitle() {
-            var result = sandbox_content.match(/\/\/\s*[T|t]itle\s*:\s*([\w|\s|\@|\(|\)|\-|\_]*)/i);
-            if (result && !(result[1] === ' ' || result[1] === '')) {
-                sandbox_title = result[1].replace(/(\r\n|\n|\r)/gm, '');
-                var title_el = document.getElementById("title").innerHTML = sandbox_title;
-                return sandbox_title;
-            }
-            else {
-                return "unknown";
-            }
-        }
-
-        function addAuthor() {
-            var result = sandbox_content.match(/\/\/\s*[A|a]uthor\s*[\:]?\s*([\w|\s|\@|\(|\)|\-|\_]*)/i);
-            if (result && !(result[1] === ' ' || result[1] === '')) {
-                sandbox_author = result[1].replace(/(\r\n|\n|\r)/gm, '');
-                document.getElementById("author").innerHTML = sandbox_author;
-                return sandbox_author;
-            }
-            else {
-                return "unknown";
-            }
-        }
-
-        function addMeta(obj) {
-            for (var key in obj) {
-                var meta = document.createElement('meta');
-                meta.setAttribute('og:'+key, obj[key]);
-                document.getElementsByTagName('head')[0].appendChild(meta);
-            }              
+                });
         }
 
         var query = parseQuery(window.location.search.slice(1));
