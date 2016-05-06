@@ -5,7 +5,7 @@
         <title>GlslCanvas</title>
 
         <script type="text/javascript" src="http://thebookofshaders.com/glslCanvas/GlslCanvas.js"></script>
-        <script type="text/javascript" src="src/fetch.js"></script>
+        <script type="text/javascript" src="fetch.js"></script>
 
         <!— Open Graph data —>
         <meta property="og:title" content="GLSL Shader" />
