@@ -38,35 +38,120 @@ export function isDiff(a, b) {
     return false;
 }
 
-export function subscribeMixin (target) {
-    var listeners = new Set();
 
-    return Object.assign(target, {
+// By Brett Camber on
+// https://github.com/tangrams/tangram/blob/master/src/gl/glsl.js
+export function parseUniforms(uniforms, prefix = null) {
+    let parsed = [];
 
-        subscribe(listener) {
-            listeners.add(listener);
-        },
+    for (let name in uniforms) {
+        let uniform = uniforms[name];
+        let u;
 
-        on(type, f) {
-            let listener = {};
-            listener[type] = f;
-            listeners.add(listener);
-        },
+        if (prefix) {
+            name = prefix + '.' + name;
+        }
 
-        unsubscribe(listener) {
-            listeners.delete(listener);
-        },
-
-        unsubscribeAll() {
-            listeners.clear();
-        },
-
-        trigger(event, ...data) {
-            for (var listener of listeners) {
-                if (typeof listener[event] === 'function') {
-                    listener[event](...data);
+        // Single float
+        if (typeof uniform === 'number') {
+            parsed.push({
+                type: 'float',
+                method: '1f',
+                name,
+                value: uniform
+            });
+        }
+        // Array: vector, array of floats, array of textures, or array of structs
+        else if (Array.isArray(uniform)) {
+            // Numeric values
+            if (typeof uniform[0] === 'number') {
+                // float vectors (vec2, vec3, vec4)
+                if (uniform.length === 1) {
+                    parsed.push({
+                        type: 'float',
+                        method: '1f',
+                        name,
+                        value: uniform
+                    });
+                }
+                // float vectors (vec2, vec3, vec4)
+                else if (uniform.length >= 2 && uniform.length <= 4) {
+                    parsed.push({
+                        type: 'vec' + uniform.length,
+                        method: uniform.length + 'fv',
+                        name,
+                        value: uniform
+                    });
+                }
+                // float array
+                else if (uniform.length > 4) {
+                    parsed.push({
+                        type: 'float[]',
+                        method: '1fv',
+                        name: name + '[0]',
+                        value: uniform
+                    });
+                }
+                // TODO: assume matrix for (typeof == Float32Array && length == 16)?
+            }
+            // Array of textures
+            else if (typeof uniform[0] === 'string') {
+                parsed.push({
+                    type: 'sampler2D',
+                    method: '1i',
+                    name: name,
+                    value: uniform
+                });
+            }
+            // Array of arrays - but only arrays of vectors are allowed in this case
+            else if (Array.isArray(uniform[0]) && typeof uniform[0][0] === 'number') {
+                // float vectors (vec2, vec3, vec4)
+                if (uniform[0].length >= 2 && uniform[0].length <= 4) {
+                    // Set each vector in the array
+                    for (u = 0; u < uniform.length; u++) {
+                        parsed.push({
+                            type: 'vec' + uniform[0].length,
+                            method: uniform[u].length + 'fv',
+                            name: name + '[' + u + ']',
+                            value: uniform[u]
+                        });
+                    }
+                }
+                // else error?
+            }
+            // Array of structures
+            else if (typeof uniform[0] === 'object') {
+                for (u = 0; u < uniform.length; u++) {
+                    // Set each struct in the array
+                    parsed.push(...parseUniforms(uniform[u], name + '[' + u + ']'));
                 }
             }
         }
-    });
+        // Boolean
+        else if (typeof uniform === 'boolean') {
+            parsed.push({
+                type: 'bool',
+                method: '1i',
+                name,
+                value: uniform
+            });
+        }
+        // Texture
+        else if (typeof uniform === 'string') {
+            parsed.push({
+                type: 'sampler2D',
+                method: '1i',
+                name,
+                value: uniform
+            });
+        }
+        // Structure
+        else if (typeof uniform === 'object') {
+            // Set each field in the struct
+            parsed.push(...parseUniforms(uniform, name));
+        }
+        // TODO: support other non-float types? (int, etc.)
+    }
+    return parsed;
 }
+

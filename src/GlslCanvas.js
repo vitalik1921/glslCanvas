@@ -23,8 +23,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import xhr from 'xhr';
 
-import { setupWebGL, createShader, createProgram, parseUniforms, loadTexture } from './gl/gl';
-import Texture from './gl/Texture';
+import { initGL } from './gl/gl';
+import { parseUniforms } from './tools/common';
+import Texture from './gl/texture';
+import Fbo from './gl/fbo';
+import Shader from './gl/shader';
 
 import { isCanvasVisible, isDiff } from './tools/common';
 import { subscribeMixin } from './tools/mixin';
@@ -37,48 +40,22 @@ export default class GlslCanvas {
 
         this.width = canvas.clientWidth;
         this.height = canvas.clientHeight;
+        this.timeLoad = Date.now();
 
         this.canvas = canvas;
         this.gl = undefined;
-        this.program = undefined;
-        this.uniforms = {};
+        this.shader = undefined;
+        
         this.vbo = {};
-        this.isValid = false;
-
-        this.vertexString = options.vertexString || `
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-attribute vec2 a_position;
-attribute vec2 a_texcoord;
-
-varying vec2 v_texcoord;
-
-void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-    v_texcoord = a_texcoord;
-}
-`;
-        this.fragmentString = options.fragmentString || `
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-varying vec2 v_texcoord;
-
-void main(){
-    gl_FragColor = vec4(0.0);
-}
-`;
 
         // GL Context
-        let gl = setupWebGL(canvas, options);
+        let gl = initGL(canvas, options);
         if (!gl) {
             return;
         }
         this.gl = gl;
-        this.timeLoad = Date.now();
+        this.shader = new Shader();
+        
         this.forceRender = true;
         this.paused = false;
 
@@ -87,41 +64,35 @@ void main(){
 
         // Load shader
         if (canvas.hasAttribute('data-fragment')) {
-            this.fragmentString = canvas.getAttribute('data-fragment');
+            this.shader.fragmentString = canvas.getAttribute('data-fragment');
         }
         else if (canvas.hasAttribute('data-fragment-url')) {
             let source = canvas.getAttribute('data-fragment-url');
             xhr.get(source, (error, response, body) => {
-                this.load(body, this.vertexString);
+                this.load(body, this.shader.vertexString);
             });
         }
 
         // Load shader
         if (canvas.hasAttribute('data-vertex')) {
-            this.vertexString = canvas.getAttribute('data-vertex');
+            this.shader.vertexString = canvas.getAttribute('data-vertex');
         }
         else if (canvas.hasAttribute('data-vertex-url')) {
             let source = canvas.getAttribute('data-vertex-url');
             xhr.get(source, (error, response, body) => {
-                this.load(this.fragmentString, body);
+                this.load(this.shader.fragmentString, body);
             });
         }
 
-        this.load();
-
-        if (!this.program) {
-            return;
-        }
-
         // Define Vertex buffer
-        let texCoordsLoc = gl.getAttribLocation(this.program, 'a_texcoord');
+        let texCoordsLoc = this.shader.getAttribute('a_texcoord');
         this.vbo.texCoords = gl.createBuffer();
         this.gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo.texCoords);
         this.gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]), gl.STATIC_DRAW);
         this.gl.enableVertexAttribArray(texCoordsLoc);
         this.gl.vertexAttribPointer(texCoordsLoc, 2, gl.FLOAT, false, 0, 0);
 
-        let verticesLoc = gl.getAttribLocation(this.program, 'a_position');
+        let verticesLoc = this.shader.getAttribute('a_position');
         this.vbo.vertices = gl.createBuffer();
         this.gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo.vertices);
         this.gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0]), gl.STATIC_DRAW);
@@ -133,7 +104,7 @@ void main(){
         if (canvas.hasAttribute('data-textures')) {
             let imgList = canvas.getAttribute('data-textures').split(',');
             for (let nImg in imgList) {
-                this.setUniform('u_tex' + nImg, imgList[nImg]);
+                this.shader.setUniform('u_tex' + nImg, imgList[nImg]);
             }
         }
 
@@ -161,67 +132,24 @@ void main(){
         return this;
     }
 
-    destroy() {
-        this.animated = false;
-        this.isValid = false;
-        for (let tex in this.textures) {
-            this.gl.deleteTexture(tex);
-        }
-        this.textures = {};
-        for (let att in this.attribs) {
-            this.gl.deleteBuffer(this.attribs[att]);
-        }
-        this.gl.useProgram(null);
-        this.gl.deleteProgram(this.program);
-        this.program = null;
-        this.gl = null;
-    }
+    load (fragString, vertString) {
+        this.shader.load(fragString, vertString);
 
-    load(fragString, vertString) {
-        // Load vertex shader if there is one
-        if (vertString) {
-            this.vertexString = vertString;
-        }
-
-        // Load fragment shader if there is one
-        if (fragString) {
-            this.fragmentString = fragString;
-        }
-
-        this.animated = false;
-        let nTimes = (this.fragmentString.match(/u_time/g) || []).length;
-        let nMouse = (this.fragmentString.match(/u_mouse/g) || []).length;
-        this.animated = nTimes > 1 || nMouse > 1;
-
-        let vertexShader = createShader(this, this.vertexString, this.gl.VERTEX_SHADER);
-        let fragmentShader = createShader(this, this.fragmentString, this.gl.FRAGMENT_SHADER);
-
-        // If Fragment shader fails load a empty one to sign the error
-        if (!fragmentShader) {
-            fragmentShader = createShader(this, 'void main(){\n\tgl_FragColor = vec4(1.0);\n}', this.gl.FRAGMENT_SHADER);
-            this.isValid = false;
-        }
-        else {
-            this.isValid = true;
-        }
-
-        // Create and use program
-        let program = createProgram(this, [vertexShader, fragmentShader]);//, [0,1],['a_texcoord','a_position']);
-        this.gl.useProgram(program);
-
-        // Delete shaders
-        // this.gl.detachShader(program, vertexShader);
-        // this.gl.detachShader(program, fragmentShader);
-        this.gl.deleteShader(vertexShader);
-        this.gl.deleteShader(fragmentShader);
-
-        this.program = program;
         this.change = true;
 
         // Trigger event
         this.trigger('load', {});
 
         this.forceRender = true;
+    }
+
+    destroy() {
+        for (let tex in this.textures) {
+            this.gl.deleteTexture(tex);
+        }
+        this.textures = {};
+        this.shader.destroy();
+        this.gl = null;
     }
 
     loadTexture (name, urlElementOrData, options) {
@@ -246,10 +174,6 @@ void main(){
         });
     }
 
-    refreshUniforms() {
-        this.uniforms = {};
-    }
-
     setUniform(name, ...value) {
         let u = {};
         u[name] = value;
@@ -265,9 +189,21 @@ void main(){
                 this.uniformTexture(parsed[u].name, parsed[u].value[0]);
             }
             else {
-                this.uniform(parsed[u].method, parsed[u].type, parsed[u].name, parsed[u].value);
+                this.shader.uniform(parsed[u].method, parsed[u].type, parsed[u].name, parsed[u].value);
                 this.forceRender = true;
             }
+        }
+    }
+
+    uniformTexture(name, texture, options) {
+        if (this.textures[name] === undefined) {
+            this.loadTexture(name, texture, options);
+        }
+        else {
+            this.shader.uniform('1i', 'sampler2D', name, this.texureIndex);
+            this.textures[name].bind(this.texureIndex);
+            this.shader.uniform('2f', 'vec2', name + 'Resolution', this.textures[name].width, this.textures[name].height);
+            this.texureIndex++;
         }
     }
 
@@ -277,35 +213,7 @@ void main(){
         if (mouse &&
             mouse.x && mouse.x >= rect.left && mouse.x <= rect.right &&
             mouse.y && mouse.y >= rect.top && mouse.y <= rect.bottom) {
-            this.uniform('2f', 'vec2', 'u_mouse', mouse.x - rect.left, this.canvas.height - (mouse.y - rect.top));
-        }
-    }
-
-	// ex: program.uniform('3f', 'position', x, y, z);
-    uniform (method, type, name, ...value) { // 'value' is a method-appropriate arguments list
-        this.uniforms[name] = this.uniforms[name] || {};
-        let uniform = this.uniforms[name];
-        let change = isDiff(uniform.value, value);
-        if (change || this.change || uniform.location === undefined || uniform.value === undefined) {
-            uniform.name = name;
-            uniform.value = value;
-            uniform.type = type;
-            uniform.method = 'uniform' + method;
-            uniform.location = this.gl.getUniformLocation(this.program, name);
-
-            this.gl[uniform.method].apply(this.gl, [uniform.location].concat(uniform.value));
-        }
-    }
-
-    uniformTexture(name, texture, options) {
-        if (this.textures[name] === undefined) {
-            this.loadTexture(name, texture, options);
-        }
-        else {
-            this.uniform('1i', 'sampler2D', name, this.texureIndex);
-            this.textures[name].bind(this.texureIndex);
-            this.uniform('2f', 'vec2', name + 'Resolution', this.textures[name].width, this.textures[name].height);
-            this.texureIndex++;
+            this.shader.uniform('2f', 'vec2', 'u_mouse', mouse.x - rect.left, this.canvas.height - (mouse.y - rect.top));
         }
     }
 
@@ -342,14 +250,14 @@ void main(){
     render () {
         this.visible = isCanvasVisible(this.canvas);
         if (this.forceRender ||
-            (this.animated && this.visible && ! this.paused)) {
+            (this.shader.animated && this.visible && ! this.paused)) {
             // set the time uniform
             let timeFrame = Date.now();
             let time = (timeFrame - this.timeLoad) / 1000.0;
-            this.uniform('1f', 'float', 'u_time', time);
+            this.shader.uniform('1f', 'float', 'u_time', time);
 
             // set the resolution uniform
-            this.uniform('2f', 'vec2', 'u_resolution', this.canvas.width, this.canvas.height);
+            this.shader.uniform('2f', 'vec2', 'u_resolution', this.canvas.width, this.canvas.height);
 
             this.texureIndex = 0;
             for (let tex in this.textures) {
@@ -376,7 +284,7 @@ void main(){
     }
 
     version() {
-        return '0.0.9';
+        return '0.1.0';
     }
 }
 
@@ -388,9 +296,7 @@ function loadAllGlslCanvas() {
         window.glslCanvases = [];
         for (var i = 0; i < list.length; i++) {
             var sandbox = new GlslCanvas(list[i]);
-            if (sandbox.isValid) {
-                window.glslCanvases.push(sandbox);
-            }
+            window.glslCanvases.push(sandbox);
         }
     }
 }

@@ -46,6 +46,7 @@
   "dependencies": {
     "babel": "^5.8.29",
     "babel-runtime": "5.8.29",
+    "gl-shader-errors": "1.0.3",
     "xhr": "^2.2.0"
   },
   "browserify-shim": {}
