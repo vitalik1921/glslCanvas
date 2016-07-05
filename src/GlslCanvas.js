@@ -21,16 +21,14 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-import xhr from 'xhr';
-
 import { initGL } from './gl/gl';
-import { parseUniforms } from './tools/common';
+import { isCanvasVisible, parseUniforms, isDiff } from './tools/common';
+import { subscribeMixin } from './tools/mixin';
+
+import xhr from 'xhr';
 import Texture from './gl/texture';
 import Fbo from './gl/fbo';
 import Shader from './gl/shader';
-
-import { isCanvasVisible, isDiff } from './tools/common';
-import { subscribeMixin } from './tools/mixin';
 
 export default class GlslCanvas {
     constructor(canvas, options) {
@@ -54,7 +52,11 @@ export default class GlslCanvas {
             return;
         }
         this.gl = gl;
-        this.shader = new Shader();
+        this.shader = new Shader(this.gl);
+
+        if (options.fragmentString || options.vertexString) {
+            this.shader.load(options.fragmentString,options.vertexString)
+        }
         
         this.forceRender = true;
         this.paused = false;
@@ -85,14 +87,14 @@ export default class GlslCanvas {
         }
 
         // Define Vertex buffer
-        let texCoordsLoc = this.shader.getAttribute('a_texcoord');
+        let texCoordsLoc = this.shader.attribute('a_texcoord');
         this.vbo.texCoords = gl.createBuffer();
         this.gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo.texCoords);
         this.gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0]), gl.STATIC_DRAW);
         this.gl.enableVertexAttribArray(texCoordsLoc);
         this.gl.vertexAttribPointer(texCoordsLoc, 2, gl.FLOAT, false, 0, 0);
 
-        let verticesLoc = this.shader.getAttribute('a_position');
+        let verticesLoc = this.shader.attribute('a_position');
         this.vbo.vertices = gl.createBuffer();
         this.gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo.vertices);
         this.gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, -1.0, 1.0, 1.0]), gl.STATIC_DRAW);

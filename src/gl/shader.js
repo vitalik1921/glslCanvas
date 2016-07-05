@@ -1,5 +1,6 @@
 import { subscribeMixin } from '../tools/mixin';
 import { default as parseShaderErrors } from 'gl-shader-errors';
+import { isDiff } from '../tools/common';
 
 export default class Shader {
     constructor(gl) {
@@ -14,7 +15,7 @@ export default class Shader {
         this.id = Shader.id++;
         Shader.programs[this.id] = this;
 
-        this.vertexString = options.vertexString || `
+        this.vertexString = `
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -29,7 +30,7 @@ void main() {
     v_texcoord = a_texcoord;
 }
 `;
-        this.fragmentString = options.fragmentString || `
+        this.fragmentString = `
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -55,20 +56,10 @@ void main(){
     }
 
     load (fragString, vertString) {
-        // Load vertex shader if there is one
-        if (vertString) {
-            this.vertexString = vertString;
-        }
-
-        // Load fragment shader if there is one
-        if (fragString) {
-            this.fragmentString = fragString;
-        }
-
+        // Load vertex/fragment shader if there is one
+        this.vertexString = vertString || this.vertexString;
+        this.fragmentString = fragString || this.fragmentString;
         this.animated = false;
-        let nTimes = (this.fragmentString.match(/u_time/g) || []).length;
-        let nMouse = (this.fragmentString.match(/u_mouse/g) || []).length;
-        this.animated = nTimes > 1 || nMouse > 1;
 
         try {
             this.program = Shader.updateProgram(this.gl, this.program, this.vertexString, this.fragmentString);
@@ -79,6 +70,12 @@ void main(){
             this.compiled = false;
             this.trigger('error', error);
         }
+
+        // Is this shader need to be animated
+        let nTimes = (this.fragmentString.match(/u_time/g) || []).length;
+        let nMouse = (this.fragmentString.match(/u_mouse/g) || []).length;
+        this.animated = nTimes > 1 || nMouse > 1;
+
         this.use();
     }
 
@@ -98,21 +95,23 @@ void main(){
     }
 
     uniform (method, type, name, ...value) { // 'value' is a method-appropriate arguments list
-        this.uniforms[name] = this.uniforms[name] || {};
-        let uniform = this.uniforms[name];
-        let change = isDiff(uniform.value, value);
-        if (change || this.change || uniform.location === undefined || uniform.value === undefined) {
-            uniform.name = name;
-            uniform.value = value;
-            uniform.type = type;
-            uniform.method = 'uniform' + method;
-            uniform.location = this.gl.getUniformLocation(this.program, name);
+        if (this.gl && this.program) {
+            this.uniforms[name] = this.uniforms[name] || {};
+            let uniform = this.uniforms[name];
+            let change = isDiff(uniform.value, value);
+            if (change || this.change || uniform.location === undefined || uniform.value === undefined) {
+                uniform.name = name;
+                uniform.value = value;
+                uniform.type = type;
+                uniform.method = 'uniform' + method;
+                uniform.location = this.gl.getUniformLocation(this.program, name);
 
-            this.gl[uniform.method].apply(this.gl, [uniform.location].concat(uniform.value));
+                this.gl[uniform.method].apply(this.gl, [uniform.location].concat(uniform.value));
+            }
         }
     }
 
-    getAttribute(name) {
+    attribute(name) {
         if (!this.compiled) {
             return;
         }
@@ -139,6 +138,58 @@ Shader.id = 0;           // assign each program a unique id
 Shader.programs = {};    // programs, by id
 Shader.current = null;   // currently bound program
 
+// Compile & link a WebGL program from provided vertex and fragment shader sources
+// update a program if one is passed in. Create one if not. Alert and don't update anything if the shaders don't compile.
+Shader.updateProgram = function (gl, program, vertex_shader_source, fragment_shader_source) {
+    try {
+        var vertex_shader = ShaderProgram.createShader(gl, vertex_shader_source, gl.VERTEX_SHADER);
+        var fragment_shader = ShaderProgram.createShader(gl, fragment_shader_source, gl.FRAGMENT_SHADER);
+    }
+    catch(err) {
+        log('error', err.message);
+        throw err;
+    }
+
+    gl.useProgram(null);
+    if (program != null) {
+        var old_shaders = gl.getAttachedShaders(program);
+        for(var i = 0; i < old_shaders.length; i++) {
+            gl.detachShader(program, old_shaders[i]);
+        }
+    } else {
+        program = gl.createProgram();
+    }
+
+    if (vertex_shader == null || fragment_shader == null) {
+        return program;
+    }
+
+    gl.attachShader(program, vertex_shader);
+    gl.attachShader(program, fragment_shader);
+
+    gl.deleteShader(vertex_shader);
+    gl.deleteShader(fragment_shader);
+
+    gl.linkProgram(program);
+
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        let message = new Error(
+            `WebGL program error:
+            VALIDATE_STATUS: ${gl.getProgramParameter(program, gl.VALIDATE_STATUS)}
+            ERROR: ${gl.getError()}
+            --- Vertex Shader ---
+            ${vertex_shader_source}
+            --- Fragment Shader ---
+            ${fragment_shader_source}`);
+
+        let error = { type: 'program', message };
+        console.log('error', error.message);
+        throw error;
+    }
+
+    return program;
+};
+
 Shader.createShader = function (gl, source, type, errorCallback) {
     let shader = gl.createShader(type);
     gl.shaderSource(shader, source);
@@ -151,31 +202,4 @@ Shader.createShader = function (gl, source, type, errorCallback) {
         throw { type, message, errors };
     }
     return shader;
-}
-
-Shader.createProgram = function (gl, shaders, optAttribs, optLocations) {
-    let program = gl.createProgram();
-    for (let ii = 0; ii < shaders.length; ++ii) {
-        gl.attachShader(program, shaders[ii]);
-    }
-    if (optAttribs) {
-        for (let ii = 0; ii < optAttribs.length; ++ii) {
-            gl.bindAttribLocation(
-            program,
-            optLocations ? optLocations[ii] : ii,
-            optAttribs[ii]);
-        }
-    }
-    gl.linkProgram(program);
-
-    // Check the link status
-    let linked = gl.getProgramParameter(program, gl.LINK_STATUS);
-    if (!linked) {
-        // something went wrong with the link
-        lastError = gl.getProgramInfoLog(program);
-        console.log('Error in program linking:' + lastError);
-        gl.deleteProgram(program);
-        return null;
-    }
-    return program;
 }
