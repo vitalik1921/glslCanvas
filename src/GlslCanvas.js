@@ -37,7 +37,7 @@ export default class GlslCanvas {
 
         this.screenCoef = screenCoef
         this.width = canvas.clientWidth*this.screenCoef;
-        this.height = canvas.clientHeightthis.screenCoef;
+        this.height = canvas.clientHeight*this.screenCoef;
 
         this.canvas = canvas;
         this.gl = undefined;
