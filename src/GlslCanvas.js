@@ -30,13 +30,14 @@ import { isCanvasVisible, isDiff } from './tools/common';
 import { subscribeMixin } from './tools/mixin';
 
 export default class GlslCanvas {
-    constructor(canvas, options) {
+    constructor(canvas, screenCoef, options) {
         subscribeMixin(this);
 
         options = options || {};
 
-        this.width = canvas.clientWidth;
-        this.height = canvas.clientHeight;
+        this.screenCoef = screenCoef
+        this.width = canvas.clientWidth*this.screenCoef;
+        this.height = canvas.clientHeightthis.screenCoef;
 
         this.canvas = canvas;
         this.gl = undefined;
@@ -401,8 +402,8 @@ void main(){
     }
 
     resize() {
-        if (this.width !== this.canvas.clientWidth ||
-            this.height !== this.canvas.clientHeight) {
+        if (this.width !== this.canvas.clientWidth*this.screenCoef ||
+            this.height !== this.canvas.clientHeight*this.screenCoef) {
             let realToCSSPixels = window.devicePixelRatio || 1;
 
             // Lookup the size the browser is displaying the canvas in CSS pixels
@@ -421,8 +422,8 @@ void main(){
                 this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
                 // this.gl.viewport(0, 0, this.gl.drawingBufferWidth, this.gl.drawingBufferHeight);
             }
-            this.width = this.canvas.clientWidth;
-            this.height = this.canvas.clientHeight;
+            this.width = this.canvas.clientWidth*this.screenCoef;
+            this.height = this.canvas.clientHeight*this.screenCoef;
             return true;
         }
         else {
