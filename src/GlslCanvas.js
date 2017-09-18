@@ -36,8 +36,8 @@ export default class GlslCanvas {
         options = options || {};
 
         this.screenCoef = screenCoef
-        this.width = canvas.clientWidth*this.screenCoef;
-        this.height = canvas.clientHeight*this.screenCoef;
+        this.width = canvas.clientWidth;
+        this.height = canvas.clientHeight;
 
         this.canvas = canvas;
         this.gl = undefined;
@@ -402,15 +402,15 @@ void main(){
     }
 
     resize() {
-        if (this.width !== this.canvas.clientWidth*this.screenCoef ||
-            this.height !== this.canvas.clientHeight*this.screenCoef) {
+        if (this.width !== this.canvas.clientWidth ||
+            this.height !== this.canvas.clientHeight) {
             let realToCSSPixels = window.devicePixelRatio || 1;
 
             // Lookup the size the browser is displaying the canvas in CSS pixels
             // and compute a size needed to make our drawingbuffer match it in
             // device pixels.
-            let displayWidth = Math.floor(this.gl.canvas.clientWidth * realToCSSPixels);
-            let displayHeight = Math.floor(this.gl.canvas.clientHeight * realToCSSPixels);
+            let displayWidth = Math.floor(this.gl.canvas.clientWidth * this.screenCoef * realToCSSPixels);
+            let displayHeight = Math.floor(this.gl.canvas.clientHeight * this.screenCoef * realToCSSPixels);
 
             // Check if the canvas is not the same size.
             if (this.gl.canvas.width !== displayWidth ||
@@ -422,8 +422,8 @@ void main(){
                 this.gl.viewport(0, 0, this.gl.canvas.width, this.gl.canvas.height);
                 // this.gl.viewport(0, 0, this.gl.drawingBufferWidth, this.gl.drawingBufferHeight);
             }
-            this.width = this.canvas.clientWidth*this.screenCoef;
-            this.height = this.canvas.clientHeight*this.screenCoef;
+            this.width = this.canvas.clientWidth;
+            this.height = this.canvas.clientHeight;
             return true;
         }
         else {
